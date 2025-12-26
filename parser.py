@@ -1,20 +1,18 @@
 import requests
 from openpyxl import load_workbook
-from bs4 import BeautifulSoup
 from datetime import datetime
 
 # =====================
 # НАСТРОЙКИ
 # =====================
-EXCEL_FILE = "Гол_во_втором_тайме_с_LIVE_HT.xlsx"
-
+EXCEL_FILE = "Гол_во_втором_тайме_расширенный.xlsx"
 SHEET_NAME = "LIVE_HT"
 
-FLASH_LIVE_URL = "https://www.flashscore.com/"
+SOFA_LIVE_API = "https://api.sofascore.com/api/v1/sport/football/events/live"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
 }
 
 # =====================
@@ -23,70 +21,57 @@ HEADERS = {
 wb = load_workbook(EXCEL_FILE)
 ws = wb[SHEET_NAME]
 
-# очищаем старые данные, НЕ трогая заголовки
+# очищаем старые данные, оставляя заголовки
 if ws.max_row > 1:
     ws.delete_rows(2, ws.max_row)
 
 # =====================
-# ПАРСИНГ FLASHScore
+# ЗАГРУЗКА LIVE МАТЧЕЙ
 # =====================
-response = requests.get(FLASH_LIVE_URL, headers=HEADERS, timeout=20)
-soup = BeautifulSoup(response.text, "html.parser")
+resp = requests.get(SOFA_LIVE_API, headers=HEADERS, timeout=30)
+data = resp.json()
 
-rows_added = 0
+events = data.get("events", [])
+
 match_number = 1
 
-matches = soup.select("div.event__match")
-
-for match in matches:
+for ev in events:
     try:
-        # счёт первого тайма
-        score = match.select_one(".event__scores")
-        if not score:
-            continue
+        home = ev["homeTeam"]["name"]
+        away = ev["awayTeam"]["name"]
 
-        ht_score = score.text.strip()
+        # текущий счёт
+        home_score = ev["homeScore"].get("current", 0)
+        away_score = ev["awayScore"].get("current", 0)
+        score = f"{home_score}-{away_score}"
 
-        # фильтр HT
-        if ht_score not in ["0:0", "1:0", "0:1"]:
-            continue
+        # статус матча
+        status = ev["status"]["description"]
 
-        team1 = match.select_one(".event__participant--home").text.strip()
-        team2 = match.select_one(".event__participant--away").text.strip()
-
-        # ---- ПОКА FlashScore не даёт всё в HTML ----
-        # коэффициенты / владение / удары
-        # ставим None — формулы Excel это переварят
-        p1 = None
-        p2 = None
-        tm45 = None
-        poss1 = None
-        poss2 = None
-        shots1 = None
-        shots2 = None
-
-        # последние 2 игры (будет отдельный этап)
-        k1_g1_z = k1_g1_p = k1_g2_z = k1_g2_p = None
-        k2_g1_z = k2_g1_p = k2_g2_z = k2_g2_p = None
+        # статистика (может отсутствовать)
+        stats = ev.get("statistics", {})
+        poss_home = None
+        poss_away = None
+        shots_home = None
+        shots_away = None
 
         ws.append([
             match_number,
-            team1,
-            team2,
-            ht_score.replace(":", "-"),
-            p1,
-            p2,
-            tm45,
-            poss1,
-            poss2,
-            shots1,
-            shots2,
-            k1_g1_z, k1_g1_p, k1_g2_z, k1_g2_p,
-            k2_g1_z, k2_g1_p, k2_g2_z, k2_g2_p
+            home,
+            away,
+            score,
+            None,   # П1
+            None,   # П2
+            None,   # ТМ4.5
+            poss_home,
+            poss_away,
+            shots_home,
+            shots_away,
+            None, None, None, None,   # последние 2 игры К1
+            None, None, None, None    # последние 2 игры К2
         ])
 
         match_number += 1
-        rows_added += 1
 
     except Exception:
         continue
@@ -96,9 +81,16 @@ for match in matches:
 # =====================
 ws["T1"] = "Обновлено:"
 ws["T2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
-ws["T3"] = f"Матчей найдено: {rows_added}"
+ws["T3"] = f"Live матчей: {match_number - 1}"
 
 # =====================
 # СОХРАНЕНИЕ
 # =====================
 wb.save(EXCEL_FILE)
+
+# =====================
+# СЛУЖЕБНАЯ ИНФОРМАЦИЯ
+# =====================
+ws["T1"] = "Обновлено:"
+ws["T2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
+ws["T3"] = f"Матчей найден
