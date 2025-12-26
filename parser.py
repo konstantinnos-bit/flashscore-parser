@@ -5,7 +5,6 @@ from datetime import datetime
 # =====================
 # НАСТРОЙКИ
 # =====================
-EXCEL_F
 EXCEL_FILE = "Гол_во_втором_тайме_с_LIVE_HT.xlsx"
 
 SHEET_NAME = "LIVE_HT"
