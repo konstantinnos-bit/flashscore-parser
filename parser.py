@@ -1,97 +1,65 @@
-import requests
+from playwright.sync_api import sync_playwright
 from openpyxl import load_workbook
 from datetime import datetime
 
-# =====================
-# НАСТРОЙКИ
-# =====================
 EXCEL_FILE = "Гол_во_втором_тайме_с_LIVE_HT.xlsx"
-
 SHEET_NAME = "LIVE_HT"
+URL = "https://www.flashscore.com/"
 
-SOFA_LIVE_API = "https://api.sofascore.com/api/v1/sport/football/events/live"
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json"
-}
-
-# =====================
-# ЗАГРУЗКА EXCEL
-# =====================
+# открываем Excel (НЕ создаём!)
 wb = load_workbook(EXCEL_FILE)
 ws = wb[SHEET_NAME]
 
-# очищаем старые данные, оставляя заголовки
+# очищаем старые данные, заголовки оставляем
 if ws.max_row > 1:
     ws.delete_rows(2, ws.max_row)
 
-# =====================
-# ЗАГРУЗКА LIVE МАТЧЕЙ
-# =====================
-resp = requests.get(SOFA_LIVE_API, headers=HEADERS, timeout=30)
-data = resp.json()
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    )
 
-events = data.get("events", [])
+    page.goto(URL, timeout=60000)
+    page.wait_for_timeout(5000)
 
-match_number = 1
+    # ждём появления live-матчей
+    page.wait_for_selector(".event__match", timeout=60000)
 
-for ev in events:
-    try:
-        home = ev["homeTeam"]["name"]
-        away = ev["awayTeam"]["name"]
+    matches = page.query_selector_all(".event__match")
 
-        # текущий счёт
-        home_score = ev["homeScore"].get("current", 0)
-        away_score = ev["awayScore"].get("current", 0)
-        score = f"{home_score}-{away_score}"
+    match_number = 1
 
-        # статус матча
-        status = ev["status"]["description"]
+    for match in matches:
+        try:
+            home = match.query_selector(".event__participant--home").inner_text().strip()
+            away = match.query_selector(".event__participant--away").inner_text().strip()
 
-        # статистика (может отсутствовать)
-        stats = ev.get("statistics", {})
-        poss_home = None
-        poss_away = None
-        shots_home = None
-        shots_away = None
+            score_el = match.query_selector(".event__scores")
+            score = score_el.inner_text().replace(":", "-") if score_el else ""
 
-        ws.append([
-            match_number,
-            home,
-            away,
-            score,
-            None,   # П1
-            None,   # П2
-            None,   # ТМ4.5
-            poss_home,
-            poss_away,
-            shots_home,
-            shots_away,
-            None, None, None, None,   # последние 2 игры К1
-            None, None, None, None    # последние 2 игры К2
-        ])
+            ws.append([
+                match_number,
+                home,
+                away,
+                score,
+                None, None, None,      # П1, П2, ТМ4.5
+                None, None,            # владение
+                None, None,            # удары
+                None, None, None, None,
+                None, None, None, None
+            ])
 
-        match_number += 1
+            match_number += 1
 
-    except Exception:
-        continue
+        except Exception:
+            continue
 
-# =====================
-# СЛУЖЕБНАЯ ИНФОРМАЦИЯ
-# =====================
+    browser.close()
+
+# служебная информация
 ws["T1"] = "Обновлено:"
 ws["T2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
 ws["T3"] = f"Live матчей: {match_number - 1}"
 
-# =====================
-# СОХРАНЕНИЕ
-# =====================
 wb.save(EXCEL_FILE)
-
-# =====================
-# СЛУЖЕБНАЯ ИНФОРМАЦИЯ
-# =====================
-ws["T1"] = "Обновлено:"
-ws["T2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
-ws["T3"] = f"Матчей найден"
