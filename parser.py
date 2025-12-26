@@ -94,4 +94,4 @@ wb.save(EXCEL_FILE)
 # =====================
 ws["T1"] = "Обновлено:"
 ws["T2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
-ws["T3"] = f"Матчей найден
+ws["T3"] = f"Матчей найден"
